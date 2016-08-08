@@ -19,11 +19,12 @@ type RegxTask struct {
 
 //Bot defines a bot
 type Bot struct {
-	Name  string
-	Token string
-	Tasks []RegxTask
-	api   *slack.Client
-	rtm   *slack.RTM
+	Name           string
+	Token          string
+	Tasks          []RegxTask
+	api            *slack.Client
+	rtm            *slack.RTM
+	DefaultMessage string
 }
 
 //RunBot runs the slackbot
@@ -87,7 +88,7 @@ func matchAction(bot *Bot, user *slack.User, text string) {
 	}
 	parameters := slack.NewPostMessageParameters()
 	parameters.AsUser = true
-	bot.api.PostMessage(user.ID, "arf! arf!", parameters)
+	bot.api.PostMessage(user.ID, bot.DefaultMessage, parameters)
 }
 
 func executeAction(api *slack.Client, rtm *slack.RTM, task *RegxTask, user *slack.User, text string) {
