@@ -54,12 +54,11 @@ func processEvents(bot *Bot) {
 	}()
 
 	for {
-		select {
-		case event := <-bot.rtm.IncomingEvents:
-			switch data := event.Data.(type) {
-			case *slack.MessageEvent:
-				messageEvent(bot, data)
-			}
+		event := <-bot.rtm.IncomingEvents
+		switch data := event.Data.(type) {
+		case *slack.MessageEvent:
+			messageEvent(bot, data)
+		default:
 		}
 	}
 }
