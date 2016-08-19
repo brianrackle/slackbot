@@ -2,30 +2,31 @@ package slackbot
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
-	"regexp"
 
 	"github.com/nlopes/slack"
 )
-
-//RegxTask defines a bot task
-type RegxTask struct {
-	Regx            *regexp.Regexp
-	TaskMessage     string
-	ResponseMessage string
-}
 
 //Bot defines a bot
 type Bot struct {
 	Name           string
 	Token          string
-	Tasks          []RegxTask
-	api            *slack.Client
-	rtm            *slack.RTM
+	MessageTasks   []func(pi *SlackAPI, data *slack.MessageEvent, user *slack.User) bool
 	DefaultMessage string
 }
+
+//SlackAPI defines the slack api connections
+type SlackAPI struct {
+	client *slack.Client
+	rtm    *slack.RTM
+}
+
+//implement heartbeat
+// func healthCheck(w http.ResponseWriter, r *http.Request) {
+// 	//ping the api server and if it succeeds then
+// 	w.WriteHeader(http.StatusOK) //return ping time
+// }
 
 //RunBot runs the slackbot
 func RunBot(bot Bot) {
@@ -36,35 +37,40 @@ func RunBot(bot Bot) {
 	defer logFile.Close()
 	log.SetOutput(logFile)
 
-	bot.api = slack.New(bot.Token)
-	bot.rtm = bot.api.NewRTM()
+	// http.HandleFunc("/status", healthCheck)
+	// http.ListenAndServe(":8080", nil)
 
-	go bot.rtm.ManageConnection()
+	client := slack.New(bot.Token)
+	rtm := client.NewRTM()
+
+	api := SlackAPI{client: client, rtm: rtm}
+
+	go api.rtm.ManageConnection()
 	for {
-		processEvents(&bot)
+		processEvents(&bot, &api)
 	}
 }
 
-func processEvents(bot *Bot) {
+func processEvents(bot *Bot, api *SlackAPI) {
 	defer func() {
 		if r := recover(); r != nil {
-			bot.rtm.Disconnect()
+			api.rtm.Disconnect()
 			log.Println("Recovered: ", r)
 		}
 	}()
 
 	for {
-		event := <-bot.rtm.IncomingEvents
+		event := <-api.rtm.IncomingEvents
 		switch data := event.Data.(type) {
 		case *slack.MessageEvent:
-			messageEvent(bot, data)
+			messageEvent(bot, api, data)
 		default:
 		}
 	}
 }
 
-func messageEvent(bot *Bot, data *slack.MessageEvent) {
-	user, err := bot.api.GetUserInfo(data.Msg.User)
+func messageEvent(bot *Bot, api *SlackAPI, data *slack.MessageEvent) {
+	user, err := api.client.GetUserInfo(data.Msg.User)
 	if err != nil {
 		log.Println(err)
 		return
@@ -74,39 +80,21 @@ func messageEvent(bot *Bot, data *slack.MessageEvent) {
 	log.Println(string(msgString))
 
 	if len(data.Msg.BotID) == 0 && !user.IsBot {
-		matchAction(bot, user, data.Msg.Text)
+		executeMessageTasks(bot, api, data, user)
 	}
 }
 
-func matchAction(bot *Bot, user *slack.User, text string) {
-	for _, task := range bot.Tasks {
-		if task.Regx.MatchString(text) {
-			executeAction(bot.api, bot.rtm, &task, user, text)
-			return
+func executeMessageTasks(bot *Bot, api *SlackAPI, data *slack.MessageEvent, user *slack.User) {
+	success := false
+	for _, task := range bot.MessageTasks {
+		if task(api, data, user) {
+			success = true
 		}
 	}
-	parameters := slack.NewPostMessageParameters()
-	parameters.AsUser = true
-	bot.api.PostMessage(user.ID, bot.DefaultMessage, parameters)
-}
 
-func executeAction(api *slack.Client, rtm *slack.RTM, task *RegxTask, user *slack.User, text string) {
-	namesBarkAt := task.Regx.SubexpNames()
-	captures := mapNamedCaptures(task.Regx.FindStringSubmatch(text), namesBarkAt)
-	targetUser, _ := api.GetUserInfo(captures["ID"])
-	if !targetUser.IsBot {
+	if !success {
 		parameters := slack.NewPostMessageParameters()
 		parameters.AsUser = true
-		api.PostMessage(captures["ID"], task.TaskMessage, parameters)
-		api.PostMessage(user.ID, fmt.Sprintf(task.ResponseMessage, targetUser.Name), parameters)
+		api.client.PostMessage(user.ID, bot.DefaultMessage, parameters)
 	}
-}
-
-func mapNamedCaptures(matches, names []string) map[string]string {
-	matches, names = matches[1:], names[1:]
-	result := make(map[string]string, len(matches))
-	for i, name := range names {
-		result[name] = matches[i]
-	}
-	return result
 }
