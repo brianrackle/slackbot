@@ -16,14 +16,19 @@ type RegxTask struct {
 
 //MessageRegexResponseTask a function for performing an action based on a regex match
 func MessageRegexResponseTask(api *SlackAPI, task *RegxTask, user *slack.User, text string) bool {
+	submatches := task.Regx.FindStringSubmatch(text)
+	if len(submatches) <= 1 {
+		return false
+	}
+
 	namesBarkAt := task.Regx.SubexpNames()
-	captures := mapNamedCaptures(task.Regx.FindStringSubmatch(text), namesBarkAt)
-	targetUser, _ := api.client.GetUserInfo(captures["ID"])
+	captures := mapNamedCaptures(submatches, namesBarkAt)
+	targetUser, _ := api.Client.GetUserInfo(captures["ID"])
 	if !targetUser.IsBot {
 		parameters := slack.NewPostMessageParameters()
 		parameters.AsUser = true
-		api.client.PostMessage(captures["ID"], task.TaskMessage, parameters)
-		api.client.PostMessage(user.ID, fmt.Sprintf(task.ResponseMessage, targetUser.Name), parameters)
+		api.Client.PostMessage(captures["ID"], task.TaskMessage, parameters)
+		api.Client.PostMessage(user.ID, fmt.Sprintf(task.ResponseMessage, targetUser.Name), parameters)
 		return true
 	}
 	return false

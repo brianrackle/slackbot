@@ -18,8 +18,8 @@ type Bot struct {
 
 //SlackAPI defines the slack api connections
 type SlackAPI struct {
-	client *slack.Client
-	rtm    *slack.RTM
+	Client *slack.Client
+	Rtm    *slack.RTM
 }
 
 //implement heartbeat
@@ -43,9 +43,9 @@ func RunBot(bot Bot) {
 	client := slack.New(bot.Token)
 	rtm := client.NewRTM()
 
-	api := SlackAPI{client: client, rtm: rtm}
+	api := SlackAPI{Client: client, Rtm: rtm}
 
-	go api.rtm.ManageConnection()
+	go api.Rtm.ManageConnection()
 	for {
 		processEvents(&bot, &api)
 	}
@@ -54,13 +54,12 @@ func RunBot(bot Bot) {
 func processEvents(bot *Bot, api *SlackAPI) {
 	defer func() {
 		if r := recover(); r != nil {
-			api.rtm.Disconnect()
 			log.Println("Recovered: ", r)
 		}
 	}()
 
 	for {
-		event := <-api.rtm.IncomingEvents
+		event := <-api.Rtm.IncomingEvents
 		switch data := event.Data.(type) {
 		case *slack.MessageEvent:
 			messageEvent(bot, api, data)
@@ -70,7 +69,7 @@ func processEvents(bot *Bot, api *SlackAPI) {
 }
 
 func messageEvent(bot *Bot, api *SlackAPI, data *slack.MessageEvent) {
-	user, err := api.client.GetUserInfo(data.Msg.User)
+	user, err := api.Client.GetUserInfo(data.Msg.User)
 	if err != nil {
 		log.Println(err)
 		return
@@ -89,12 +88,13 @@ func executeMessageTasks(bot *Bot, api *SlackAPI, data *slack.MessageEvent, user
 	for _, task := range bot.MessageTasks {
 		if task(api, data, user) {
 			success = true
+			break
 		}
 	}
 
 	if !success {
 		parameters := slack.NewPostMessageParameters()
 		parameters.AsUser = true
-		api.client.PostMessage(user.ID, bot.DefaultMessage, parameters)
+		api.Client.PostMessage(user.ID, bot.DefaultMessage, parameters)
 	}
 }
